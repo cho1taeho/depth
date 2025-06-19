@@ -1,79 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:depth/presentation/state/depth_state.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatelessWidget {
+  final bool isCameraPermissionGranted;
+  final CameraController? controller;
+  final Future<void>? initializeControllerFuture;
+  final DepthState state;
+  final VoidCallback onTakePicture;
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  CameraController? _controller;
-  Future<void>? _initializeControllerFuture;
-  bool _isCameraPermissionGranted = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initCamera();
-  }
-
-  Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
-    if (status.isGranted) {
-      final cameras = await availableCameras();
-      if (cameras.isNotEmpty) {
-        _controller = CameraController(
-          cameras[0],
-          ResolutionPreset.medium,
-        );
-        _initializeControllerFuture = _controller!.initialize();
-        setState(() {
-          _isCameraPermissionGranted = true;
-        });
-      }
-    } else {
-      setState(() {
-        _isCameraPermissionGranted = false;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
+  const HomeScreen({
+    Key? key,
+    required this.isCameraPermissionGranted,
+    required this.controller,
+    required this.initializeControllerFuture,
+    required this.state,
+    required this.onTakePicture,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    if (!_isCameraPermissionGranted) {
+    if (!isCameraPermissionGranted) {
       return const Center(child: Text('카메라 권한이 필요합니다.'));
     }
-    if (_controller == null || _initializeControllerFuture == null) {
+    if (controller == null || initializeControllerFuture == null) {
       return const Center(child: CircularProgressIndicator());
     }
     return FutureBuilder<void>(
-      future: _initializeControllerFuture,
+      future: initializeControllerFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
           return Stack(
             children: [
-              CameraPreview(_controller!),
+              CameraPreview(controller!),
               Positioned(
                 bottom: 40,
                 left: 0,
                 right: 0,
                 child: Center(
                   child: FloatingActionButton(
-                    onPressed: _takePicture,
+                    onPressed: state.isLoading ? null : onTakePicture,
                     child: const Icon(Icons.camera_alt),
                   ),
                 ),
               ),
+              if (state.filePath != null)
+                Positioned(
+                  top: 40,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Text('사진 저장 경로: ${state.filePath}'),
+                  ),
+                ),
+              if (state.error != null)
+                Positioned(
+                  top: 80,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Text(
+                      '에러: ${state.error}',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ),
             ],
           );
         } else {
@@ -81,28 +72,5 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
     );
-  }
-
-  Future<void> _takePicture() async {
-    try {
-      await _initializeControllerFuture;
-      final image = await _controller!.takePicture();
-      // 저장 경로: 앱 전용 디렉토리
-      final directory = await getApplicationDocumentsDirectory();
-      final String filePath =
-          '${directory.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await image.saveTo(filePath);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('사진이 저장되었습니다!\n$filePath')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('사진 저장 실패: $e')),
-        );
-      }
-    }
   }
 }
