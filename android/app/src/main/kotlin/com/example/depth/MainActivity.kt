@@ -1,6 +1,6 @@
-// android/app/src/main/kotlin/com/example/depthmap/MainActivity.kt
+// android/app/src/main/kotlin/com/example/depth/MainActivity.kt
 
-package com.example.depthmap
+package com.example.depth
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
