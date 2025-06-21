@@ -1,4 +1,3 @@
-import 'package:depth/presentation/screen/home_screen.dart';
 import 'package:depth/presentation/screen/home_screen_root.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
