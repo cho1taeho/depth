@@ -10,6 +10,9 @@ import com.google.ar.core.Session
 import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.exceptions.UnavailableException
 import java.io.File
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.depth"
@@ -22,6 +25,10 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "initSession" -> initSession(result)
                     "captureImage" -> captureImage(result)
+                    "saveToGallery" -> {
+                        val imagePath = call.argument<String>("imagePath")!!
+                        saveImageToGallery(imagePath, result)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -84,6 +91,32 @@ class MainActivity : FlutterActivity() {
             )
         } catch (e: Exception) {
             result.error("CAPTURE_ERROR", e.localizedMessage, null)
+        }
+    }
+
+    // 갤러리에 이미지 저장하는 함수
+    private fun saveImageToGallery(imagePath: String, result: MethodChannel.Result) {
+        try {
+            val file = File(imagePath)
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+            }
+
+            val resolver = contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+            uri?.let { imageUri ->
+                resolver.openOutputStream(imageUri)?.use { outputStream ->
+                    file.inputStream().use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                result.success("Image saved to gallery")
+            } ?: result.error("SAVE_ERROR", "Failed to save image", null)
+        } catch (e: Exception) {
+            result.error("SAVE_ERROR", e.localizedMessage, null)
         }
     }
 }
