@@ -1,5 +1,5 @@
-abstract interface class DepthRepository {
-  Future<String> takeDepthPicture();
+import 'package:camera/camera.dart';
 
-  Future<void> savePictureToLocal(String filePath, List<int> imageBytes);
+abstract class DepthRepository {
+  Future<XFile> takePicture(CameraController controller);
 }
