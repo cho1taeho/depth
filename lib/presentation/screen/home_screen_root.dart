@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:camera/camera.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:depth/core/provider/provider.dart';
-import 'home_screen.dart';
+import 'camera_tab.dart';
+import 'photo_tab.dart';
 
 class HomeScreenRoot extends ConsumerStatefulWidget {
   const HomeScreenRoot({Key? key}) : super(key: key);
@@ -13,53 +11,37 @@ class HomeScreenRoot extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenRootState extends ConsumerState<HomeScreenRoot> {
-  CameraController? _controller;
-  Future<void>? _initializeControllerFuture;
-  bool _isCameraPermissionGranted = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initCamera();
-  }
-
-  Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
-    if (status.isGranted) {
-      final cameras = await availableCameras();
-      if (cameras.isNotEmpty) {
-        _controller = CameraController(
-          cameras[0],
-          ResolutionPreset.medium,
-        );
-        _initializeControllerFuture = _controller!.initialize();
-        setState(() {
-          _isCameraPermissionGranted = true;
-        });
-      }
-    } else {
-      setState(() {
-        _isCameraPermissionGranted = false;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
+  int _currentIndex = 0; // 0: 카메라탭, 1: 포토탭 (기본값: 카메라탭)
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = ref.watch(depthViewModelProvider);
-
-    return HomeScreen(
-      isCameraPermissionGranted: _isCameraPermissionGranted,
-      controller: _controller,
-      initializeControllerFuture: _initializeControllerFuture,
-      state: viewModel.state,
-      onTakePicture: () => viewModel.takeDepthPicture(_controller),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_currentIndex == 0 ? '실시간 측정' : '사진 측정'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
+      body: _currentIndex == 0 ? CameraTab() : PhotoTab(),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index; // 탭 전환
+          });
+        },
+        items: [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.camera_alt),
+            label: '카메라',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.photo),
+            label: '사진',
+          ),
+        ],
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
+      ),
     );
   }
 }
