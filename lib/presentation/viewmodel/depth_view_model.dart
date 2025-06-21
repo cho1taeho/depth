@@ -38,13 +38,5 @@ class DepthViewModel extends ChangeNotifier {
       notifyListeners();
     }
   }
-
-  Future<void> savePictureToLocal(String filePath, List<int> imageBytes) async {
-    _state = _state.copyWith(isLoading: true, error: null);
-    notifyListeners();
-
-    final result = await useCase.savePictureToLocal(filePath, imageBytes);
-    _state = result;
-    notifyListeners();
-  }
+  
 }
