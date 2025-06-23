@@ -13,10 +13,39 @@ import java.io.File
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Environment
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.*
+import java.io.FileOutputStream
+import java.io.DataOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.depth"
     private var arSession: Session? = null
+    
+    // 동영상 촬영 관련 변수들
+    private var isRecording = AtomicBoolean(false)
+    private var recordingJob: Job? = null
+    private val depthFrames = ConcurrentLinkedQueue<DepthFrame>()
+    
+    // 깊이 프레임 데이터 클래스
+    data class DepthFrame(
+        val timestamp: Long,
+        val depthData: ByteArray,
+        val width: Int,
+        val height: Int
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as DepthFrame
+            return timestamp == other.timestamp
+        }
+        
+        override fun hashCode(): Int {
+            return timestamp.hashCode()
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -25,6 +54,8 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "initSession" -> initSession(result)
                     "captureImage" -> captureImage(result)
+                    "startVideoRecording" -> startVideoRecording(result)
+                    "stopVideoRecording" -> stopVideoRecording(result)
                     "saveToGallery" -> {
                         val imagePath = call.argument<String>("imagePath")!!
                         saveImageToGallery(imagePath, result)
@@ -36,6 +67,15 @@ class MainActivity : FlutterActivity() {
                         val x2 = call.argument<Int>("x2")!!
                         val y2 = call.argument<Int>("y2")!!
                         measureDistanceInDepthFile(depthPath, x1, y1, x2, y2, result)
+                    }
+                    "measureVideoFrame" -> {
+                        val videoPath = call.argument<String>("videoPath")!!
+                        val frameTimestamp = call.argument<Long>("frameTimestamp")!!
+                        val x1 = call.argument<Int>("x1")!!
+                        val y1 = call.argument<Int>("y1")!!
+                        val x2 = call.argument<Int>("x2")!!
+                        val y2 = call.argument<Int>("y2")!!
+                        measureDistanceInVideoFrame(videoPath, frameTimestamp, x1, y1, x2, y2, result)
                     }
                     else -> result.notImplemented()
                 }
@@ -168,5 +208,193 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             result.error("MEASURE_ERROR", e.localizedMessage, null)
         }
+    }
+
+    // 동영상 촬영 시작
+    private fun startVideoRecording(result: MethodChannel.Result) {
+        if (isRecording.get()) {
+            result.error("ALREADY_RECORDING", "Already recording video", null)
+            return
+        }
+
+        try {
+            val session = arSession ?: throw IllegalStateException("Session not initialized")
+            
+            // 깊이 데이터 파일 경로 설정
+            val dir = File(filesDir, "videos").apply { if (!exists()) mkdirs() }
+            val timestamp = System.currentTimeMillis()
+            val depthDataFile = File(dir, "depth_${timestamp}.dat")
+            
+            // 깊이 데이터 수집 시작
+            isRecording.set(true)
+            depthFrames.clear()
+            
+            recordingJob = CoroutineScope(Dispatchers.IO).launch {
+                var frameCount = 0
+                while (isRecording.get()) {
+                    try {
+                        session.resume()
+                        val frame = session.update()
+                        
+                        // 깊이 데이터 수집
+                        try {
+                            frame.acquireDepthImage16Bits().use { depthImage ->
+                                val depthBuffer = depthImage.planes[0].buffer
+                                val depthBytes = ByteArray(depthBuffer.remaining()).also { depthBuffer.get(it) }
+                                
+                                depthFrames.offer(DepthFrame(
+                                    timestamp = System.currentTimeMillis(),
+                                    depthData = depthBytes,
+                                    width = depthImage.width,
+                                    height = depthImage.height
+                                ))
+                                
+                                // 깊이 데이터를 파일에 저장
+                                DataOutputStream(FileOutputStream(depthDataFile, true)).use { dos ->
+                                    dos.writeLong(System.currentTimeMillis())
+                                    dos.writeInt(depthImage.width)
+                                    dos.writeInt(depthImage.height)
+                                    dos.writeInt(depthBytes.size)
+                                    dos.write(depthBytes)
+                                }
+                            }
+                        } catch (_: NotYetAvailableException) {
+                            // 깊이 데이터가 아직 사용 불가능
+                        }
+                        
+                        session.pause()
+                        frameCount++
+                        delay(33) // 약 30fps
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        break
+                    }
+                }
+            }
+            
+            result.success(mapOf(
+                "depthDataPath" to depthDataFile.absolutePath,
+                "timestamp" to timestamp
+            ))
+            
+        } catch (e: Exception) {
+            result.error("RECORDING_ERROR", e.localizedMessage, null)
+        }
+    }
+    
+    // 동영상 촬영 중지
+    private fun stopVideoRecording(result: MethodChannel.Result) {
+        if (!isRecording.get()) {
+            result.error("NOT_RECORDING", "Not currently recording", null)
+            return
+        }
+        
+        try {
+            isRecording.set(false)
+            recordingJob?.cancel()
+            
+            result.success("Video recording stopped")
+            
+        } catch (e: Exception) {
+            result.error("STOP_RECORDING_ERROR", e.localizedMessage, null)
+        }
+    }
+    
+    // 동영상 프레임에서 거리 측정
+    private fun measureDistanceInVideoFrame(
+        videoPath: String, 
+        frameTimestamp: Long, 
+        x1: Int, y1: Int, x2: Int, y2: Int, 
+        result: MethodChannel.Result
+    ) {
+        try {
+            // 동영상 파일명에서 depth 데이터 파일 경로 추출
+            val videoFile = File(videoPath)
+            val depthDataFile = File(videoFile.parent, "depth_${videoFile.nameWithoutExtension.split("_").last()}.dat")
+            
+            if (!depthDataFile.exists()) {
+                result.error("DEPTH_DATA_NOT_FOUND", "Depth data file not found", null)
+                return
+            }
+            
+            // 해당 타임스탬프에 가장 가까운 깊이 프레임 찾기
+            val targetFrame = findClosestDepthFrame(depthDataFile, frameTimestamp)
+            
+            if (targetFrame == null) {
+                result.error("FRAME_NOT_FOUND", "Depth frame not found for timestamp", null)
+                return
+            }
+            
+            // 깊이 데이터에서 거리 측정
+            val distance = calculateDistanceFromDepthData(
+                targetFrame.depthData, 
+                targetFrame.width, 
+                targetFrame.height, 
+                x1, y1, x2, y2
+            )
+            
+            result.success(distance)
+            
+        } catch (e: Exception) {
+            result.error("MEASURE_VIDEO_ERROR", e.localizedMessage, null)
+        }
+    }
+    
+    // 가장 가까운 깊이 프레임 찾기
+    private fun findClosestDepthFrame(depthDataFile: File, targetTimestamp: Long): DepthFrame? {
+        try {
+            var closestFrame: DepthFrame? = null
+            var minDifference = Long.MAX_VALUE
+            
+            depthDataFile.inputStream().use { input ->
+                while (input.available() > 0) {
+                    val timestamp = input.readLong()
+                    val width = input.readInt()
+                    val height = input.readInt()
+                    val dataSize = input.readInt()
+                    val depthData = ByteArray(dataSize)
+                    input.read(depthData)
+                    
+                    val difference = Math.abs(timestamp - targetTimestamp)
+                    if (difference < minDifference) {
+                        minDifference = difference
+                        closestFrame = DepthFrame(timestamp, depthData, width, height)
+                    }
+                }
+            }
+            
+            return closestFrame
+            
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+    
+    // 깊이 데이터에서 거리 계산 (기존 함수와 동일)
+    private fun calculateDistanceFromDepthData(
+        depthData: ByteArray, 
+        width: Int, 
+        height: Int, 
+        x1: Int, y1: Int, x2: Int, y2: Int
+    ): Int {
+        // 픽셀 좌표가 이미지 범위를 벗어나지 않도록 체크
+        if (x1 < 0 || x1 >= width || y1 < 0 || y1 >= height ||
+            x2 < 0 || x2 >= width || y2 < 0 || y2 >= height) {
+            return 0
+        }
+
+        // Depth Map에서 특정 픽셀의 깊이값 추출 (16-bit)
+        fun getDepth(x: Int, y: Int): Int {
+            val index = (y * width + x) * 2
+            if (index + 1 >= depthData.size) return 0
+            return ((depthData[index + 1].toInt() and 0xFF) shl 8) or (depthData[index].toInt() and 0xFF)
+        }
+
+        val d1 = getDepth(x1, y1)
+        val d2 = getDepth(x2, y2)
+
+        // 두 점 사이의 거리 계산 (단순한 깊이 차이)
+        return Math.abs(d1 - d2)
     }
 }
