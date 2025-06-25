@@ -15,11 +15,21 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   bool _isCameraPermissionGranted = false;
+  static const platform = MethodChannel('com.example.depth');
 
   @override
   void initState() {
     super.initState();
+    _initDepthSession();
     _initCamera();
+  }
+
+  Future<void> _initDepthSession() async {
+    try {
+      await platform.invokeMethod('initSession');
+    } catch (e) {
+      // 무시
+    }
   }
 
   Future<void> _initCamera() async {
@@ -46,47 +56,16 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   Future<void> _takePicture() async {
     try {
       if (_controller == null) return;
-
-      // ARCore를 통한 사진 촬영 (컬러 + Depth Map)
-      // MethodChannel로 네이티브 호출
-      const platform = MethodChannel('com.example.depth');
-      final result = await platform.invokeMethod<Map<String, dynamic>>('captureImage');
-
-      if (result != null) {
-        final colorPath = result['colorPath'] as String?;
-        final depthPath = result['depthPath'] as String?;
-
-        // 갤러리에 저장 (컬러 이미지만)
-        if (colorPath != null) {
-          await _saveToGallery(colorPath);
+      final result = await platform.invokeMethod<Map>('captureImage');
+      if (result != null && result['colorPath'] != null) {
+        await platform.invokeMethod('saveToGallery', {'imagePath': result['colorPath']});
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('사진이 저장되었습니다')),
+          );
         }
       }
-    } catch (e) {
-      // 에러 처리
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('사진 촬영에 실패했습니다: $e')),
-      );
-    }
-  }
-
-  // 갤러리에 저장하는 함수
-  Future<void> _saveToGallery(String imagePath) async {
-    try {
-      const platform = MethodChannel('com.example.depth');
-      final result = await platform.invokeMethod<String>('saveToGallery', {
-        'imagePath': imagePath,
-      });
-
-      if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('사진이 갤러리에 저장되었습니다.')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('갤러리 저장 중 오류가 발생했습니다: $e')),
-      );
-    }
+    } catch (e) {}
   }
 
   @override
@@ -98,32 +77,18 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   @override
   Widget build(BuildContext context) {
     if (!_isCameraPermissionGranted) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.camera_alt, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('카메라 권한이 필요합니다.'),
-          ],
-        ),
-      );
+      return const Center(child: Icon(Icons.camera_alt, size: 64, color: Colors.grey));
     }
-
     if (_controller == null || _initializeControllerFuture == null) {
       return const Center(child: CircularProgressIndicator());
     }
-
     return FutureBuilder<void>(
       future: _initializeControllerFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
           return Stack(
             children: [
-              // 카메라 프리뷰
               CameraPreview(_controller!),
-
-              // 사진 촬영 버튼
               Positioned(
                 bottom: 40,
                 left: 0,
@@ -133,26 +98,6 @@ class _CameraTabState extends ConsumerState<CameraTab> {
                     onPressed: _takePicture,
                     backgroundColor: Colors.white,
                     child: const Icon(Icons.camera_alt, color: Colors.black),
-                  ),
-                ),
-              ),
-
-              // 상단 안내 텍스트
-              Positioned(
-                top: 40,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      '사진을 찍어서 거리 측정을 시작하세요',
-                      style: TextStyle(color: Colors.white),
-                    ),
                   ),
                 ),
               ),
