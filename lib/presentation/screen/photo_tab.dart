@@ -45,113 +45,88 @@ class _PhotoTabState extends ConsumerState<PhotoTab> {
           // 선택된 사진 뷰어
           if (selectedImagePath != null) ...[
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: GestureDetector(
-                  onTapDown: _onImageTap,
-                  child: Stack(
-                    children: [
-                      // 사진 이미지
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(selectedImagePath!),
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                          height: double.infinity,
-                        ),
+              child: Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: GestureDetector(
+                      onTapDown: _onImageTap,
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              File(selectedImagePath!),
+                              fit: BoxFit.contain,
+                              width: double.infinity,
+                              height: double.infinity,
+                            ),
+                          ),
+                          ...selectedPoints.map((point) => Positioned(
+                            left: point.dx - 10,
+                            top: point.dy - 10,
+                            child: Container(
+                              width: 20,
+                              height: 20,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.circle,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                          )),
+                          if (selectedPoints.length == 2)
+                            CustomPaint(
+                              painter: LinePainter(
+                                point1: selectedPoints[0],
+                                point2: selectedPoints[1],
+                              ),
+                              child: Container(),
+                            ),
+                        ],
                       ),
-
-                      // 선택된 점들 표시
-                      ...selectedPoints.map((point) => Positioned(
-                        left: point.dx - 10,
-                        top: point.dy - 10,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.circle,
-                            color: Colors.white,
-                            size: 16,
-                          ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (measuredDistance != null)
+                    Text(
+                      '${measuredDistance!.toStringAsFixed(2)} $selectedUnit',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ...['mm', 'cm', 'm'].map((unit) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: Text(unit),
+                          selected: selectedUnit == unit,
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                selectedUnit = unit;
+                                _convertUnit();
+                              });
+                            }
+                          },
                         ),
                       )),
-
-                      // 두 점 사이 선 그리기
-                      if (selectedPoints.length == 2)
-                        CustomPaint(
-                          painter: LinePainter(
-                            point1: selectedPoints[0],
-                            point2: selectedPoints[1],
-                          ),
-                          child: Container(),
-                        ),
                     ],
                   ),
-                ),
+                ],
               ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // 측정 결과
-            if (measuredDistance != null)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '측정 결과: ${measuredDistance!.toStringAsFixed(2)} $selectedUnit',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: _saveMeasurement,
-                      icon: const Icon(Icons.save),
-                      tooltip: '측정 결과 저장',
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 16),
-
-            // 단위 선택
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('단위: '),
-                ...['mm', 'cm', 'm'].map((unit) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    label: Text(unit),
-                    selected: selectedUnit == unit,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          selectedUnit = unit;
-                          _convertUnit();
-                        });
-                      }
-                    },
-                  ),
-                )),
-              ],
             ),
 
             const SizedBox(height: 16),
