@@ -37,7 +37,7 @@ defaultTasks("assembleDebug")
 
 android {
     namespace = "com.example.depth"
-    compileSdk = 34
+    compileSdk = 35
 
 
     defaultConfig {
