@@ -187,8 +187,20 @@ class _PhotoTabState extends ConsumerState<PhotoTab> {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
       if (image != null) {
+        final colorPath = image.path;
+        final dir = File(colorPath).parent;
+        final fileName = File(colorPath).uri.pathSegments.last;
+        String? depthPath;
+        if (fileName.startsWith('color_')) {
+          final depthFileName = fileName.replaceFirst('color_', 'depth_').replaceAll('.jpg', '.raw');
+          final candidate = File('${dir.path}/$depthFileName');
+          if (candidate.existsSync()) {
+            depthPath = candidate.path;
+          }
+        }
         setState(() {
-          selectedImagePath = image.path;
+          selectedImagePath = colorPath;
+          selectedDepthPath = depthPath;
           selectedPoints.clear();
           measuredDistance = null;
         });
